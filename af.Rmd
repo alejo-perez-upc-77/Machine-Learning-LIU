@@ -1,0 +1,43 @@
+---
+title: "Assignment"
+author: "Alejo Perez Gomez"
+date: "15/11/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(kknn)
+library(reshape2)
+library(knitr)
+# Set so that long lines in R will be wrapped:
+opts_chunk$set(tidy.opts=list(width.cutoff=40),tidy=TRUE)
+```
+
+## 1 
+
+```{r}
+digits <- read.csv(file = "C:/Users/alejo/Documents/GitHub_Repos/ML-labs/lab1/optdigits.csv")
+digits[,ncol(digits)] <- data.frame(sapply(digits[,ncol(digits)], as.character),stringsAsFactors = TRUE)
+names(digits) <- c(seq.int(ncol(digits)-1),"target")
+```
+
+Plotting one observation
+
+```{r, echo=FALSE,  out.width="50%"}
+plot_observation <- function(id, M){
+  number <- matrix(M[id, 1:(ncol(M)-1)], 8,8)
+  mode(number) = "numeric"
+  image(number[,nrow(number):1], col=grey(seq(0, 1, length = 256)))
+  return(M[id, ncol(M)])
+}
+
+plot_observation(5, digits)
+```
+
+```{r, echo=FALSE,  out.width="50%"}
+as.numeric(digits[4, ncol(digits)])-1
+
+```
+
+## 2

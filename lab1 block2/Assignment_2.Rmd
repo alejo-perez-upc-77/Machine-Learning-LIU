@@ -1,0 +1,169 @@
+---
+title: "Assignment_2"
+author: "Alejo Perez Gomez"
+date: "16/11/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(kknn)
+library(reshape2)
+library(knitr)
+# Set so that long lines in R will be wrapped:
+opts_chunk$set(tidy.opts=list(width.cutoff=40),tidy=TRUE)
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+# Assignment2
+
+Your task is to implement the EM algorithm for mixtures of multivariate Bernoulli distributions. Please use the R template below to solve the assignment. Then, use your implementation to show what happens when your mixture model has too few and too many components, i.e. set K=2,3,4 and compare results. Please provide a short explanation as well.
+
+First, it will be necessary to define our function of density of probability corresponding to the Bernoulli distribution. Let $D$ be the dimensions of our vectors of observations $x_n$ and $\mu_k$. 
+$$Bernoulli(x_i,\mu_k)=\prod_{i=1}^{D}\mu_{ki}^{x_{i}}(1-\mu_{ki})^{1-x_{i}} $$
+
+As for our matrix $z_{nk}$, its components will be defined as follows, with their values $n$ comprised from 1 to N observations for $X$ and its values k from 1 to K, being K the number of mixture components $\pi_k$. This will be the matrix of fractional component assignments.
+
+$$z_{nk} = \frac{\pi_k * Bernoulli (x_n,\mu_k)}{\sum_{k=1}^{K} \pi_k*Bernoulli(x_n , \mu_k)}$$
+Now, the log-likelihood function will be defined in this way:
+
+$$ \sum_{n=1}^{N}\sum_{k=1}^{K} p(z_{n}|x_n,\mu,\pi)*[ln(\pi_k) +\sum_{i=1}^{D}[x_{ni}*ln(\mu_{ki})+(1-x_{ni})*ln(1-\mu_{ki})]]$$
+After Applying MLE over each mixture components and weights, we obtain:
+$$ \hat{n_k}^{MLE} = \sum_{n=1}^N z_{nk} $$
+$$ \pi^{MLE}_k = \frac{\hat{n_k}}{N} $$
+$$ \mu_{ki}^{MLE} = \frac{\sum_{n=1}^N z_{nk}x_{ni}}{\hat{n}} $$
+After this statement, executions of our implementation will be shown for K=2,3,4.
+
+
+```{r, echo=FALSE, out.width="50%"}
+whole_process <- function(K){set.seed(1234567890)
+
+  
+  max_it <- 100 # max number of EM iterations
+  min_change <- 0.1 # min change in log likelihood between two consecutive EM iterations
+  N=1000 # number of training points
+  D=10 # number of dimensions
+  x <- matrix(nrow=N, ncol=D) # training data
+  
+  true_pi <- vector(length = 3) # true mixing coefficients
+  true_mu <- matrix(nrow=3, ncol=D) # true conditional distributions
+  true_pi=c(1/3, 1/3, 1/3)
+  true_mu[1,]=c(0.5,0.6,0.4,0.7,0.3,0.8,0.2,0.9,0.1,1)
+  true_mu[2,]=c(0.5,0.4,0.6,0.3,0.7,0.2,0.8,0.1,0.9,0)
+  true_mu[3,]=c(0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5)
+  #plot(true_mu[1,], type="o", col="blue", ylim=c(0,1))
+  #points(true_mu[2,], type="o", col="red")
+  #points(true_mu[3,], type="o", col="green")
+  # Producing the training data
+  for(n in 1:N) {
+    k <- sample(1:3,1,prob=true_pi)
+    for(d in 1:D) {
+      x[n,d] <- rbinom(1,1,true_mu[k,d])
+    }
+  }
+  
+  K=K # number of guessed components
+  z <- matrix(nrow=N, ncol=K) # fractional component assignments
+  pi <- vector(length = K) # mixing coefficients
+  mu <- matrix(nrow=K, ncol=D) # conditional distributions
+  llik <- vector(length = max_it) # log likelihood of the EM iterations
+  
+  # Random initialization of the parameters
+  pi <- runif(K,0.49,0.51)
+  pi <- pi / sum(pi)
+  for(k in 1:K) {
+    mu[k,] <- runif(D,0.49,0.51)
+  }
+  #pi
+  #mu
+  
+  for(it in 1:max_it) {
+    
+    Sys.sleep(0.5)
+    
+    # E-step: Computation of the fractional component assignments
+    divisorz_1 <- matrix(nrow = dim(z)[1], ncol = dim(z)[2]); 
+    for(i in 1:N){ # loop for multinomial matrix NxK  
+      for(j in 1:K){
+        divisorz_1[i,j] <- prod((mu[j,]**x[i,])*((1-mu[j,])**(1-x[i,])))           
+      }
+    }
+    
+    divisorz_2 <- matrix(pi, nrow=N, ncol=length(pi), byrow=TRUE) #pi's at the divisor
+    divisor_z <- rowSums(divisorz_2*divisorz_1)
+    
+    z <- (divisorz_2*divisorz_1)/(divisor_z)
+    
+    
+    #Log likelihood computation.
+    ln_pi <- log(divisorz_2)
+    z_loglike_part1 <- matrix(nrow = dim(z)[1], ncol = dim(z)[2]); 
+    for(i in 1:N){ # loop for multinomial matrix NxK  
+      for(j in 1:K){
+        z_loglike_part1[i,j] <- sum((log(mu[j,])*x[i,])+((log(1-mu[j,]))*(1-x[i,])))           
+      }
+    }
+    
+    llik[it] <- sum(rowSums((z_loglike_part1+ln_pi)*z))
+    
+    #cat("iteration: ", it, "log likelihood: ", llik[it], "\n")
+    flush.console() 
+    # Stop if the log likelihood has not changed significantly
+    if((it != 1) && (abs(llik[it]-llik[it-1])<min_change)){
+      break
+    }
+    
+    #M-step: ML parameter estimation from the data and fractional component assignments
+    n_estimators <- colSums(z) 
+    
+    pi <- n_estimators/N 
+    
+    for (j in 1:K){ # Let's set the new mu estimator through z (p(k|i))
+      
+      mu[j,] <- (1/n_estimators[j])*colSums(z[,j]*x)
+      
+    }
+  }
+  
+  #pi
+  #mu
+  cat("Final iteration with K = ", K, ": ", it, "log likelihood: ", llik[it], "\n")
+  cat("Here will be shown the log-likelihood plot of this experiment with K = ", K)
+  
+  plot(llik[1:it], type="o")
+  
+  cat("Here will be shown the mu (mixture weights parameters) plot of this experiment with K = ", K)
+  if(K == 2){
+    plot(mu[1,], type="o", col="blue", ylim=c(0,1))
+    points(mu[2,], type="o", col="red")
+  }
+  if (K==3){
+    plot(mu[1,], type="o", col="blue", ylim=c(0,1))
+    points(mu[2,], type="o", col="red")
+    points(mu[3,], type="o", col="green")
+  }
+  if (K==4){
+    plot(mu[1,], type="o", col="blue", ylim=c(0,1))
+    points(mu[2,], type="o", col="red")
+    points(mu[3,], type="o", col="green")
+    points(mu[4,], type="o", col="yellow")
+  }
+
+
+}
+whole_process(2)
+whole_process(3)
+whole_process(4)
+```
+
+Once the experiments have been performed, let this table summarize results.
+
+
+```{r, echo=FALSE}
+table_mat <- cbind(c(2,3,4),c(16,62,66),c(-6496.662,-6743.326, -6874.497))
+colnames(table_mat) <- c("K", "number of Iterations", "Log-Likelihood Value")
+knitr::kable((table_mat))
+```
+
+As we can see, creating 2 different clusters ($k=2$), results in a faster convergence, needing just 16 iterations. As K increases, the log-likelihood decreases. This could be explained from an overfitting-based approach, leading us to think that too many components could result in worse performance.

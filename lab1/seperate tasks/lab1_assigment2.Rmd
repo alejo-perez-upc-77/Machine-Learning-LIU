@@ -1,0 +1,316 @@
+---
+title: "Assignment 2"
+author: "Martynas Lukosevicius, Alejo Perez Gomez, Shwetha Vandagadde Chandramouly"
+date: "07/11/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#knitr::opts_chunk$set(cache = TRUE)
+```
+
+# Assignment 2
+
+### 1.
+
+Model:  
+$\hat y \sim N(w_0 +w^tX_i, \sigma^2)$ where $w \sim N(0, \frac{\sigma^2}{\lambda})$
+
+* $w$ - weights
+* $X$ - features
+* $\lambda$ - regularization penalty
+* $\sigma$ - standard deviation
+
+<!-- Bayes' theorem: -->
+
+<!-- $$ p(w|d)\propto(D|w)p(w)$$ -->
+<!-- Probability of y: -->
+
+<!-- $$ p(y| X, w,\sigma) = N(w_0 +w^tX_i, \sigma^2) $$ -->
+
+<!-- Prior probability: -->
+
+<!-- $$ p(w) \sim N(0, \frac{\sigma^2}{\lambda}) = \frac 1 {\sqrt{2 \pi \frac {\sigma^2 }{\lambda}} } e^ - { \frac {(w)^2}{2 \frac {\sigma^2}{\lambda}}} $$ -->
+<!-- Likelihood: -->
+
+<!-- $$ p(D|w) = \prod^n_{i = 1} N(w_0 +w^tX_i, \sigma^2) $$ -->
+
+<!-- $$ p(D|w) = \prod^n_{i = 1} \frac 1 {\sqrt{2 \pi \sigma^2} } e^ - { \frac {(y - X_iw)^2}{2 \sigma^2}} = \frac 1 {(\sqrt{2 \pi \sigma^2})^n } e^ - \sum^n_{i = 1} \frac{(y_i - w^TX_i)^2} {2\sigma^2} $$ -->
+
+<!-- Model: -->
+
+<!-- $$ p(w|D) \propto \frac 1 {(\sqrt{2 \pi \sigma^2})^n } e^ - \sum^n_{i = 1} \frac{(y_i - w^TX_i)^2} {2\sigma^2}  * \frac 1 {\sqrt{2 \pi \frac {\sigma^2 }{\lambda}} } e^ - { \frac {(w)^2}{2 \frac {\sigma^2}{\lambda}}} = \frac{\sqrt \lambda}{(\sqrt{2 \pi \sigma^2})^{n+1}} e^{- \frac{\sum^n_{i=1} (y_i - w^TX_i)^2 + w^2\lambda}{2\sigma^2}} $$ -->
+### 2.
+
+Scaling data:
+
+```{r, message = FALSE}
+library(readr)
+parkinsons <- read_csv("parkinsons.csv")
+cleaned <- parkinsons[c(-1:-4, -6)]
+parkinsons.scaled <- scale(cleaned)
+set.seed(12345)
+n <- dim(parkinsons.scaled)[1]
+id=sample(1:n, floor(n*0.6))
+train=parkinsons.scaled[id,]
+test=parkinsons.scaled[-id,]
+```
+
+
+### 3.
+
+As we will be optimizing $\sigma$ and $w$, likelihood and prior should contain all $\sigma$, even if data is scaled (so it means that $\sigma \sim 1$): 
+ 
+$$ log(posterior) = log(likelihood* prior) = log(likelihood) + log(prior)$$
+
+#### a)
+
+loglikelihood:
+$$log (p(D|w)) = - \frac n {2} log(2 \pi \sigma^2) - \sum^n_{i = 1} \frac{(y_i - w^TX_i)^2} {2\sigma^2}$$
+
+```{r}
+
+loglikelihood <- function(w, sigma){
+n <- dim(train)[1]
+part1 <- -(n/ 2) * log(2 * pi*(sigma^2))
+
+y <- train[, 1]
+x <- train[, -1]
+res <- sum((y - (x %*% w))^2)
+
+return(part1 - (res/(2*(sigma^2))))
+}
+
+```
+
+#### b)
+
+Ridge part $\sim$ log prior, where $\tau = { \frac {\sigma^2} \lambda}$:
+
+
+$$ log(prior) =  -{1 \over 2}log({2 \pi \tau}) - { \frac {(w)^2}{2 \tau}} $$
+
+function returns $- log(posterior)$
+
+```{r}
+
+ridge <- function(x, lambda){
+  w <- x[1:16]
+  sigma <- x[17]
+  tau <- sigma^2 / lambda
+  part1 <-  (-1/2) * log(2* pi * tau)
+  part2 <- (w %*% w) / (2* tau)
+  ridge <- part1 - part2
+  return( - (loglikelihood(w,sigma) + ridge))
+}
+
+```
+
+#### c)
+
+function to predict weights ($w$) and $\sigma$
+```{r}
+ridgeOpt <- function(lambda){
+  x <- rep(1,17)
+  a <- optim(x ,ridge, method = "BFGS", lambda = lambda)
+  w <- a$par[1:16]
+  sigma <- a$par[17]
+  return(a)
+}
+
+```
+
+#### d)
+
+function to calculate degrees of freedom
+```{r}
+
+DF <- function(lambda){
+  m <- as.matrix(train[ ,-1])
+  part1 <- t(m) %*% m + (lambda * diag(16))
+  part2 <- m %*% solve(part1) %*% t(m)
+  return(sum(diag(part2)))
+}
+
+
+```
+
+### 4.
+
+```{r , echo=FALSE, results = FALSE}
+task4 <- function(lambda){
+  a <- ridgeOpt(lambda)
+  n <- dim(train)[1]
+  
+  w <- a$par[1:16]
+  
+  predict <- train[ , -1] %*% w
+  y <- train[ ,1]
+  
+  MSEtrain <- (1/n) * t((y-predict)) %*% (y-predict)
+  n <- dim(test)[1]
+  predict <- test[ , -1] %*% w
+  y <- test[ ,1]
+  
+  MSEtest <- (1/n) * t((y-predict)) %*% (y-predict)
+  result <- list(w = w, sigma = a$par[17], testMSE = MSEtest, trainMSE = MSEtrain)
+  return(result)
+
+}
+```
+
+```{r , echo= FALSE}
+
+lambda1 <- task4(1)
+lambda2 <- task4(100)
+lambda3 <- task4(1000)
+# nn <- rbind(c(lambda1$w, lambda1$sigma), c(lambda2$w, lambda2$sigma), c(lambda3$w, lambda3$sigma))
+# row.names(nn) <- c("lambda 1", "lambda 2", "lambda 3")
+# col_names <- c(sprintf("w%d", 1:16), "sigma")
+# colnames(nn) <- col_names
+mm <- rbind(c(lambda1$trainMSE, lambda1$testMSE),
+            c(lambda2$trainMSE, lambda2$testMSE),
+            c(lambda3$trainMSE, lambda3$testMSE))
+row.names(mm) <- c("lambda = 1", "lambda = 100", "lambda = 1000")
+colnames(mm) <- c("MSE train", "MSE test")
+knitr::kable(mm)
+```
+ $\lambda = 100$ is better than others because MSE for train set and for test set is lowest. MSE is good loss function because it comes from model's MLE.
+
+### 5.
+
+```{r, echo=FALSE, results = FALSE}
+
+DF <- function(lambda){
+  m <- as.matrix(parkinsons.scaled[ ,-1])
+  part1 <- t(m) %*% m + (lambda * diag(16))
+  part2 <- m %*% solve(part1) %*% t(m)
+  return(sum(diag(part2)))
+}
+
+loglikelihood <- function(w, sigma){
+n <- dim(train)[1]
+part1 <- -(n/ 2) * log(2 * pi*(sigma^2))
+
+y <- parkinsons.scaled[, 1]
+x <- parkinsons.scaled[, -1]
+res <- sum((y - (x %*% w))^2)
+
+return(part1 - (res/(2*(sigma^2))))
+}
+
+
+```
+
+```{r , echo=FALSE }
+AIC1 <- -2 * loglikelihood(lambda1$w, lambda1$sigma) + 2 * DF(1)
+AIC2 <- -2 * loglikelihood(lambda2$w, lambda2$sigma) + 2 * DF(100)
+AIC3 <- -2 * loglikelihood(lambda3$w, lambda3$sigma) + 2 * DF(1000)
+#print(paste("AIC1:", AIC1, "AIC2:", AIC2, "AIC3:", AIC3))
+
+AIC <- c(AIC1 , AIC2 , AIC3)
+names(AIC) <- c("lambda = 1", "lambda = 100", "lambda = 1000")
+knitr::kable(as.matrix(AIC, nrow= 1), row.names = TRUE,  col.names = c("AIC") )
+res <- which.min(AIC)
+res <- ifelse(res == 1, "1", ifelse(res == 2, 100, 1000))
+```
+
+The optimal model is with lowest AIC score, in this case its a model with $\lambda =$  `r res`. Hold out method requires to divide data into 3 parts, which wont allow to use all data for training, its not the case with AIC.
+
+# Appendix
+
+```
+##Assignment 2
+
+library(readr)
+parkinsons <- read_csv("parkinsons.csv")
+cleaned <- parkinsons[c(-1:-4, -6)]
+parkinsons.scaled <- scale(cleaned)
+set.seed(12345)
+n <- dim(parkinsons.scaled)[1]
+id=sample(1:n, floor(n*0.6))
+train=parkinsons.scaled[id,]
+test=parkinsons.scaled[-id,]
+
+loglikelihood <- function(w, sigma){
+  n <- dim(train)[1]
+  part1 <- -(n/ 2) * log(2 * pi*(sigma^2))
+  y <- train[, 1]
+  x <- train[, -1]
+  res <- sum((y - (x %*% w))^2)
+  return(part1 - (res/(2*(sigma^2))))
+}
+
+ridge <- function(x, lambda){
+  w <- x[1:16]
+  sigma <- x[17]
+  tau <- sigma^2 / lambda
+  part1 <-  (-1/2) * log(2* pi * tau)
+  part2 <- (w %*% w) / (2* tau)
+  ridge <- part1 - part2
+  return( - (loglikelihood(w,sigma) + ridge))
+}
+
+ridgeOpt <- function(lambda){
+  x <- rep(1,17)
+  a <- optim(x ,ridge, method = "BFGS", lambda = lambda)
+  w <- a$par[1:16]
+  sigma <- a$par[17]
+  return(a)
+}
+
+DF <- function(lambda){
+  m <- as.matrix(train[ ,-1])
+  part1 <- t(m) %*% m + (lambda * diag(16))
+  part2 <- m %*% solve(part1) %*% t(m)
+  return(sum(diag(part2)))
+}
+
+task4 <- function(lambda){
+  a <- ridgeOpt(lambda)
+  n <- dim(train)[1]
+  
+  w <- a$par[1:16]
+  
+  predict <- train[ , -1] %*% w
+  y <- train[ ,1]
+  
+  MSEtrain <- (1/n) * t((y-predict)) %*% (y-predict)
+  n <- dim(test)[1]
+  predict <- test[ , -1] %*% w
+  y <- test[ ,1]
+  
+  MSEtest <- (1/n) * t((y-predict)) %*% (y-predict)
+  result <- list(w = w, sigma = a$par[17], testMSE = MSEtest, trainMSE = MSEtrain)
+  return(result)
+
+}
+
+lambda1 <- task4(1)
+lambda2 <- task4(100)
+lambda3 <- task4(1000)
+mm <- rbind(c(lambda1$trainMSE, lambda1$testMSE),
+            c(lambda2$trainMSE, lambda2$testMSE),
+            c(lambda3$trainMSE, lambda3$testMSE))
+row.names(mm) <- c("lambda = 1", "lambda = 100", "lambda = 1000")
+colnames(mm) <- c("MSE train", "MSE test")
+
+DF <- function(lambda){
+  m <- as.matrix(parkinsons.scaled[ ,-1])
+  part1 <- t(m) %*% m + (lambda * diag(16))
+  part2 <- m %*% solve(part1) %*% t(m)
+  return(sum(diag(part2)))
+}
+
+AIC1 <- -2 * loglikelihood(lambda1$w, lambda1$sigma) + 2 * DF(1)
+AIC2 <- -2 * loglikelihood(lambda2$w, lambda2$sigma) + 2 * DF(100)
+AIC3 <- -2 * loglikelihood(lambda3$w, lambda3$sigma) + 2 * DF(1000)
+#print(paste("AIC1:", AIC1, "AIC2:", AIC2, "AIC3:", AIC3))
+
+AIC <- c(AIC1 , AIC2 , AIC3)
+names(AIC) <- c("lambda = 1", "lambda = 100", "lambda = 1000")
+knitr::kable(as.matrix(AIC, nrow= 1), row.names = TRUE,  col.names = c("AIC") )
+res <- which.min(AIC)
+res <- ifelse(res == 1, "1", ifelse(res == 2, 100, 1000))
+```

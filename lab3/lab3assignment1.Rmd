@@ -1,0 +1,180 @@
+---
+title: "Lab3assignment1"
+author: "Alejo Perez Gomez"
+date: "11/12/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1
+## Kernel methods
+
+In this assignment we are required to use a Gaussian kernel-based algorithm to predict air temperatures based on Linköping meteorologic station Registers. Three Kernels operations will be computed: 
+
+  * 1. Based in Haversine Great Circle Distance using coordinates
+  * 2. Based in time distance in days
+  * 3. Based in time distance hours
+
+In order to choose the divisor constant $h$ for each kernel we will plot the response of each over a reasonable support. The support of the Haversine kernel will be a sequence comprised between 1 and 300 km since that is the approximate span radius of Linköping city. The support the day-distance-kernel will be 30 days and for the hour-distance-kernel 24 hours. We tried several values $h$ until getting plots which conferred us larger response for smaller distance values and less for bigger ones. Therefore we will choose the following values for $h$.
+
+ * 1. $h_{day}=10$ To include distances within the third part of a month
+ * 2. $h_{hour}=4$ Will allow us to account for time distances within a day with a strong variability of 3 hours span
+ * 3. $h_{Haversine}=100$ So as we can account for distances smaller than the span of Linköping being the constant the third part of it. 
+ 
+Moreover, the response in the plots show $h_{day}=10$ and $h_{hour}=4$ show similar responses towards the variation of distances and $h_{Haversine}=100$ has a lower cut-off value for distances, what means that it starts rejecting smaller distances than the other two.
+
+``` {r, echo=FALSE, include=FALSE}
+### Functions ###
+library(ggplot2)
+library(geosphere)
+
+filter_day_Data <- function(df, day){
+  df <- df[as.Date(df$date) < as.Date(day),]
+  df
+} 
+```
+
+```{r, echo=FALSE}
+### Kernels ###
+
+distance_kernel <- function(subset, interest, h){
+  exp(-(distHaversine(data.frame(subset$longitude, subset$latitude), 
+                      interest)/(h*1000))^2)
+}
+
+day_kernel <- function(subset, interest, h){
+  exp(-((as.numeric(as.Date(subset$date) - as.Date(interest), 
+                    unit="days"))/h)^2)
+}
+
+hour_kernel <- function(subset, interest, h) {
+  exp(-(as.numeric(difftime(strptime(subset$time , format = "%H:%M:%S"), 
+                        strptime(interest , format = "%H:%M:%S"), 
+                        units = "hours"))/h)^2)
+}
+
+```
+
+```{r, out.width = '50%', out.height= '50%', echo=FALSE}
+### Kernel plotting ###
+distance_kernel_plot <- function(x, h){
+  y_val <- exp(-(x/h)^2)
+  plot(x = x, y = y_val, type="l", ylab = "distance kernel")
+}
+
+day_kernel_plot <- function(x, h){
+  y_val <- exp(-(x/h)^2)
+  plot(x = x, y = y_val, type="l", ylab = "day kernel")
+
+}
+
+hour_kernel_plot <- function(x, h) {
+  y_val <- exp(-(x/h)^2)
+  plot(x = x, y = y_val, type="l", ylab = "hour kernel")
+
+}
+
+distance_kernel_plot(seq(0,300000,1),100000)
+day_kernel_plot(seq(0,30,1),10)
+hour_kernel_plot(seq(0,24,1),4)
+```
+
+Here below we well initialize values, with the date to predict $day:2013-8-15$ and coordinates $lon:58.4274, lot:14.826$. The algorithm will calculate the kernel operation for the *day distance* and *Haversine distance* for the dataset with earlier days than the mentioned. As for the *hour distance*, it will loop over the vector `times` in order to calculate a distance between each different time bucket in the vector and the rest of the filtered dataframe.
+
+Afterwards, the predicted temperatures will be calculated out of the sum of kernels and their product separately.
+
+```{r, message=FALSE, warnings=FALSE}
+### Initial values
+
+set.seed(1234567890)
+stations <- read.csv("stations.csv")
+temps <- read.csv("temps50k.csv")
+st <- merge(stations,temps,by="station_number")
+
+h_distance <- 100
+h_date <- 10
+h_time <- 4
+
+a <- 58.4274 
+b <- 14.826
+
+
+date <- "2013-8-15" # The date to predict (up to the students)
+
+times <- c("04:00:00", "06:00:00", "08:00:00", "10:00:00", "12:00:00", 
+           "14:00:00", "16:00:00", "18:00:00", "20:00:00", "22:00:00",
+           "24:00:00")
+
+temp <- list(kernel_summation=vector(length=length(times)), kernel_product= vector(length=length(times)))
+
+input <- list(temp = temp, 
+              times=times, 
+              input_date=date, 
+              lat_lon=c(b,a), 
+              h_distance=h_distance,
+              h_date=h_date,
+              h_time=h_time)
+
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+### Algorithm of Kernel computation ###
+
+compute_temp <- function(st, input){
+  
+  # Get the input variables
+  temp <- input$temp
+  times <- input$times
+  input_date <- input$input_date
+  lat_lon <- input$lat_lon
+  h_distance <- input$h_distance
+  h_date <- input$h_date
+  h_time<- input$h_time
+  
+  # Filter posterior days
+  st_filtered <- filter_day_Data(df = st, day = input_date)
+  
+  # Compute kernel for km and day distance
+  kernel_result_distance <- distance_kernel(st_filtered, lat_lon, h_distance)
+  kernel_result_day <- day_kernel(st_filtered, input_date, h_date)
+  
+  # Computation of hour kernel results by iteration
+  for (i in 1:length(times)){
+    
+    kernel_result_hour_i <- hour_kernel(st_filtered, times[i], h_time)
+    kernel_summation_i <- kernel_result_distance + kernel_result_day +
+      kernel_result_hour_i
+    kernel_product_i <- kernel_result_distance * kernel_result_day * 
+      kernel_result_hour_i
+    
+    temp$kernel_summation[i] <- sum(kernel_summation_i  %*%                st_filtered$air_temperature)/sum(kernel_summation_i)
+    
+    temp$kernel_product[i] <- sum(kernel_product_i %*%    st_filtered$air_temperature)/sum(kernel_product_i)
+  }
+  
+  temp
+  
+  
+}
+```
+
+```{r, echo=FALSE, warnings=FALSE, message=FALSE}
+temp <- compute_temp(st, input)
+
+```
+```{r, echo=FALSE, warnings=FALSE, message=FALSE}
+temp <- data.frame(temp)
+temp$time <- times
+
+library(reshape2)
+
+dat = melt(temp)
+
+ggplot(aes(x = time, y = value, color = variable), data = dat) +  
+      geom_point() + geom_line() + 
+      theme(axis.text.x = element_text(angle = -45)) 
+```
+Up to this point some considerations should be taken regarding the result of the plot. At first glance, the result of the summation of Kernels does not make much sense based on the year season of the day we are predicting for. However, the kernel product has achieved another much more sensible result for a summer random day. The possible explanation of why the summation model is attaining smaller values than the product one might be the sum of three Gaussian exponential leads not as large values as the product of such.

@@ -1,0 +1,174 @@
+---
+title: "Assignment 3"
+author: "Alejo Pérez Gómez"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, out.width = "50%"}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(results = "asis")
+```
+
+# Assignment 3
+
+## 1. 
+
+First we will scale all the variables and implement the PCA. We will not include the variable State as it is categorical data and we will only apply scaling and PCA on continuous variables.
+
+```{r ,echo = FALSE, fig.align='center', warning=FALSE}
+data_com=read.csv2("C:/Users/alejo/Documents/GitHub_Repos/ML-labs/lab2/communities.csv", sep = ",")
+library(ggplot2)
+library(ggfortify)
+```
+```{r , out.width = "60%", fig.align='center'}
+## Load data and convert to numeric
+data_com <- sapply(data_com, as.numeric)
+
+#Scaling features excluding state and target
+X <- scale(data_com[,c(-1, -101)])
+cov_mat <- cov(X)
+
+cov_mat_eigen <- eigen(cov_mat)
+
+#proportion of variance explained for each component
+proportion_variation <- cov_mat_eigen$values/sum(cov_mat_eigen$values)
+
+plot(cov_mat_eigen$values, xlab = 'Eigenvalue Number', ylab = 'Eigenvalue Size',
+     main = 'Scree Graph')
+lines(cov_mat_eigen$values)
+
+```
+
+The percentage of the variance accounted by the first two principal components is `r round(sum(proportion_variation[1:2]), 3)*100`%. We calculated that out of summing the two first terms in our vector of variance explanations, dividing eigen values by total variance.
+
+To achieve an explanation of the variance of `r round(sum(proportion_variation[1:35]), 3)`%, 35 PC are needed.
+
+## 2. 
+
+In this section PCA will be used but with function `princomp()`
+
+```{r , out.width = "50%"}
+
+X.pca <- princomp(X)
+
+```
+Now the plot for the first principal component will be shown.
+
+```{r , out.width = "50%", fig.align='center'}
+plot(X.pca$scores[,1], main="First principal component" )
+```
+
+There are a total of 13 features that contribute notably to the first PC (using a threshold of 0.15) are the following (in absolute value).
+
+
+```{r , out.width = "60%", echo= FALSE, message=FALSE, warning=FALSE , fig.align='center' }
+
+table <- as.matrix(sort(abs(X.pca$loadings[,1]), decreasing = TRUE)[1:13])
+knitr::kable(as.matrix(sort(abs(X.pca$loadings[,1]), decreasing = TRUE)[1:13]),col.names = c("Value of contribution"))
+
+```
+The 5 most contributing features in regards to the first PC are **median family income, median household income,  percentage of kids in family housing with two parents, percentage of households with investment and percentage of people under the poverty level**. These features can be arguably related to the crime level in communities. We could assume a correlation between these variables and criminality. It can be likely then, that an individual that happen to commit a crime registers poor values in terms of some of the aforementioned features disregarding a cause-effect approach. In addition, that could lead us to think that those variables can connected when relating them to criminality.
+
+Here is presented a plot of 2 fist PCA colored according the violent crimes per population. As can be seen, we could separate observations in clusters if we establish a threshold for the criminality rate.
+
+```{r , out.width = "70%", echo= FALSE, message=FALSE, warning=FALSE, fig.align='center'}
+pca.plot <- autoplot(X.pca,)
+autoplot(X.pca, data = data_com, colour = 'ViolentCrimesPerPop') + ggtitle("PC2 vs PC1")
+```
+
+## 3.
+In this section, a quadratic linear model is to be applied using the violent crime rate as a target and PC1 as feature.  
+
+```{r , out.width = "70%", message=FALSE, warning=FALSE, fig.align='center'}
+X_data <- as.data.frame(cbind(X, data_com[,101]))
+colnames(X_data)[100] <- "ViolentCrimesPerPop"
+
+model = lm(ViolentCrimesPerPop ~ poly(X.pca$scores[,1], degree = 2), data= X_data)
+```
+A plot is shown down below presenting the observations scattered in black (PC1 vs Violent Crimes per Population) and the predictions in red. It is visible how the model has been able to capture the underlying relationship between two variables emulating the curve inside the cloud of points.
+
+```{r , out.width = "70%", echo= FALSE, message=FALSE, warning=FALSE, fig.align='center'}
+ggplot(X_data, aes(X.pca$scores[,1], ViolentCrimesPerPop)) +
+  geom_point() +
+  geom_point(aes(x=X.pca$scores[,1], y=predict(model, X_data)), color="red") + 
+  ggtitle("Violent Crimes per Population vs PC1")
+
+
+```
+
+## 4.
+
+Parametric Bootstrap will be used in this point to estimate the confidence and prediction bands from the model in section 3. In case of the prediction interval, the plotted lines envelop closely the fitted predictions and fall inside the cloud of point observations, bordering the edges though. The plot of confidence interval shows lines that imitate  the curve the fitted predictions as well. The lines are closer to the predicted values at the beginning, whereas as ViolentCrimesPerPop increases they move away. The bottom line is straight, yet to be fixed. 
+
+```{r , out.width = "70%", echo= FALSE, message=FALSE, warning=FALSE, fig.align='center'}
+
+library(boot)
+
+data <- as.data.frame(cbind(X.pca$scores[,1], X_data[100] ) )
+colnames(data) <- c("PC1", "ViolentCrimesPerPop")
+data <- data[order(data$PC1),]
+
+mle <- lm(ViolentCrimesPerPop ~ poly(PC1, degree = 2), data= data)
+
+
+rng <- function(data, mle) {
+  data1=data.frame(ViolentCrimesPerPop=data$ViolentCrimesPerPop, PC1=data$PC1)
+  n=length(data$PC1)
+  #generate new Price
+  data1$Price=rnorm(n, predict(mle, newdata=data1), sd(mle$residuals))
+  return(data1)
+}
+
+f1=function(data1){
+  res=lm(ViolentCrimesPerPop ~ poly(PC1, degree = 2), data=data1) #fit linear model
+  #predict values for all Area values from the original data
+  priceP=predict(res,newdata=data)
+  return(priceP)
+}
+
+res=boot(data, statistic=f1, R=1000, mle=mle,ran.gen=rng, sim="parametric")
+
+e=envelope(res) # compute confidence bands
+fit=mle
+predicted_violence=predict(fit)
+
+plot(data$PC1, data$ViolentCrimesPerPop, pch=21, bg="orange", main="PC1 vs ViolentCrimesPerPop, Confidence interval")
+points(data$PC1, predicted_violence) # plot fitted line
+
+# plot confidence bands
+
+points(data$PC1, predicted_violence + e$point[2,], type="l", col="red")
+points(data$PC1, predicted_violence - e$point[1,], type="l", col="red")
+
+```
+
+```{r , out.width = "70%", echo= FALSE, message=FALSE, warning=FALSE, fig.align='center'}
+
+####### Prediction interval ########
+
+mle <- lm(ViolentCrimesPerPop ~ poly(PC1, degree = 2), data= data)
+
+f1=function(data1){
+  res=mle # fit
+  # predict values for all PC1 values
+  
+  predicted_violence=predict(res,newdata=data)
+  n=length(data$ViolentCrimesPerPop)
+  predictedP=rnorm(n,predicted_violence,
+                   sd(mle$residuals))
+  return(predictedP)
+}
+res=boot(data, statistic=f1, R=10000, mle=mle,ran.gen=rng, sim="parametric")
+
+e = envelope(res) 
+fit = lm(ViolentCrimesPerPop~poly(PC1, degree=2), data=data)
+violent_predict = predict(fit)
+
+plot(data$PC1, data$ViolentCrimesPerPop, pch=21, bg="orange", main="PC1 vs ViolentCrimesPerPop, Prediction interval")
+points(data$PC1, violent_predict) #plot fitted line
+
+points(data$PC1, e$point[2,], type="l", col="red") 
+points(data$PC1, e$point[1,], type="l", col="red")
+
+
+```

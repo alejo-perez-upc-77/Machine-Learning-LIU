@@ -1,0 +1,181 @@
+---
+title: "Assignment 3"
+author: "Martynas Lukosevicius"
+date: "15/11/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1.
+
+
+
+```{r, echo=FALSE, results = FALSE, message=FALSE, warning=FALSE}
+library(readr)
+data0=read_csv("geneexp.csv")
+data=data0[, -1]
+data$CellType=as.factor(data$CellType)
+set.seed(12345)
+n <- dim(data)[1]
+id=sample(1:n, floor(n*0.7))
+train=data[id,]
+test=data[-id,]
+```
+
+```{r, echo=FALSE, results = FALSE, message=FALSE, warning=FALSE}
+library(pamr)
+rownames(train)=1:nrow(train)
+genenames <- colnames(train[ ,-ncol(train)])
+x <- t(train[ ,-ncol(train)])
+y=train[[ncol(train)]]
+mydata=list(x=x,y=as.factor(y),geneid=as.character(1:nrow(x)), genenames=genenames)
+model=pamr.train(mydata)
+cvmodel=pamr.cv(model,mydata)
+minError <- which.min(cvmodel$error)
+bestTh <- cvmodel$threshold[minError]
+
+```
+
+
+```{r , echo=FALSE}
+pamr.plotcen(model, mydata, threshold = bestTh)
+```
+
+
+
+
+```{r , echo=FALSE, results = FALSE}
+numberOfGenes <- model$nonzero[minError]
+listOfGenes  <- pamr.listgenes(model, mydata, bestTh)
+bestGenes <- mydata$genenames[as.vector(as.numeric(listOfGenes[1:2,1]))]
+```
+Centroid plot shows distance from gene mean value to global mean value. Positive or negative shows if mean is greater or smaller than the global mean.  No, it can't happen that all values for some gene in centroid plot are positive, because distance is calculated to the mean of all values of the gene . Number of genes selected when threshold = `r bestTh` : `r numberOfGenes`.
+
+
+## 2. 
+
+ Most contributed genes: `r bestGenes`.
+ alternative names: CD74, HLA-DRA.
+ These genes are marker genes for B cells
+ 
+ 
+```{r , echo=FALSE, echo=FALSE, results = FALSE, message=FALSE, warning=FALSE}
+rownames(test)=1:nrow(test)
+genenames <- colnames(test[ ,-ncol(test)])
+x <- t(test[ ,-ncol(test)])
+y=test[[ncol(test)]]
+testdata=list(x=x,y=as.factor(y),geneid=as.character(1:nrow(x)), genenames=genenames)
+predictions <- pamr.predict(model, testdata$x, threshold = bestTh)
+
+```
+
+```{r , echo=FALSE}
+#knitr::kable(table(testdata$y,confusionMatrix))
+```
+Test error rate: `r sum(testdata$y != predictions)/ length(predictions)`
+
+## 3. 
+
+
+```{r , echo=FALSE, results = FALSE, message=FALSE, warning=FALSE}
+library(glmnet)
+x <- as.matrix(train[ ,-ncol(train)])
+cv.elastic <- cv.glmnet(x, train$CellType, alpha = 0.5, family = "multinomial")
+
+res1 <- predict(cv.elastic, newx = as.matrix(test[ ,-ncol(test)]), s = cv.elastic$lambda.min, type = "class")
+```
+
+```{r , echo=FALSE}
+#knitr::kable(table(testdata$y,res1))
+```
+
+
+
+```{r , echo=FALSE, results = FALSE, message=FALSE, warning=FALSE}
+library("kernlab")
+
+x <- as.matrix(unname(train[ ,-ncol(train)]))
+svp = ksvm(x = x,y = train$CellType,  kernel='vanilladot')
+
+res2 <- predict(svp, as.matrix(test[ ,-ncol(test)]))
+```
+
+
+Table bellow shows test error rate and number of features used.
+```{r , echo=FALSE}
+
+results <- matrix(c(signif(sum(testdata$y != predictions)/length(predictions),digits = 2), numberOfGenes), nrow = 1)
+results <- rbind(results,c(signif(sum(testdata$y != res1)/length(res1),digits = 2), cv.elastic$nzero[which(cv.elastic$glmnet.fit$lambda == cv.elastic$lambda.min)]))
+results <- rbind(results, c(signif(sum(testdata$y != res2)/length(res2),digits = 2), nrow(mydata$x)))
+row.names(results) <- c("NSC", "EN", "SVM")
+colnames(results) <- c("Test error rate", "N. features")
+knitr::kable(results)
+```
+I prefer Elastic net, because SVM might overfit and use a lot of parameters, NSC might have underfited.
+
+## 4.
+
+```{r , echo=FALSE}
+test <- function(name){
+  y <- ifelse(data$CellType == name, 1, 0 )
+  df <- data.frame(character(), numeric())
+  for (i in 1:(dim(data)[2]-1)) {
+    test <- t.test(unlist(data[ ,i])~y, data = data, alternative = "two.sided")
+    df <- rbind(df, c(colnames(data)[i], test$p.value))
+  }
+  colnames(df) <- c("name", "pvalue")
+  return(df)
+}
+
+plotres <- function(name){
+  
+  results <- test(name)
+      
+  results <- results[order(as.numeric(results$pvalue)), ]
+  
+  M <- length(results$pvalue)
+  for (i in 1:M) {
+    if(as.numeric(results$pvalue[i]) > (0.05 * i / M)){
+      break
+    }
+    
+  }
+  L <- i-1
+  amount <<- rbind(amount, c(name, L))
+  p <- as.numeric(results$pvalue[L])
+  rejected <- ifelse(as.numeric(results$pvalue) <= p, 1, 0 )
+  
+  row.names(results) <- c(1:length(results$pvalue))
+  
+  title <- paste0(name)
+  plot(c(1:L),
+       results$pvalue[1:L],
+       pch = 20,
+       col = "red",
+       xlim = c(0,M),
+       ylim = c(0,1),
+       cex = 0.5,
+       xlab = "features ordered by p-value",
+       ylab = "p-value",
+       main = title)
+  abline(v=L, col="blue")
+  points(c(L+1:M), results$pvalue[L+1:M], pch = 20, col = "blue", xlim = c(0,M), ylim = c(0,1), cex = 0.5)
+}
+
+amount= data.frame(name= character(), amount = numeric())
+par(mfrow=c(1,3))
+plotres("CD4")
+plotres("CD8")
+plotres("CD19")
+```
+points symbolize genes, red genes are rejected meaning that they have an effect on corresponding cell. 
+
+Table bellow shows the amount of rejected genes for each cell.
+
+```{r , echo=FALSE}
+colnames(amount) <- c("cell", "rejected")
+knitr::kable(amount)
+```

@@ -1,0 +1,91 @@
+---
+title: "Support vector machines"
+author: "Martynas Lukosevicius, Alejo Perez Gomez, Shwetha Vandagadde Chandramouly"
+date: "07/12/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 2. SUPPORT VECTOR MACHINES
+
+```{r, echo=FALSE, warning=FALSE}
+# Lab 3 block 1 of 732A99/TDDE01 Machine Learning
+# Author: jose.m.pena@liu.se
+# Made for teaching purposes
+
+library(kernlab)
+set.seed(1234567890)
+
+data(spam)
+
+index <- sample(1:4601)
+tr <- spam[index[1:3000], ]
+va <- spam[index[3001:3800], ]
+trva <- spam[index[1:3800], ]
+te <- spam[index[3801:4601], ]
+
+by <- 0.3
+err_va <- NULL
+for(i in seq(by,5,by)){
+  filter <- ksvm(type~.,data=tr,kernel="rbfdot",kpar=list(sigma=0.05),C=i)
+  mailtype <- predict(filter,va[,-58])
+  t <- table(mailtype,va[,58])
+  err_va <-c(err_va,(t[1,2]+t[2,1])/sum(t))
+}
+
+filter0 <- ksvm(type~.,data=tr,kernel="rbfdot",kpar=list(sigma=0.05),C=which.min(err_va)*by)
+mailtype <- predict(filter0,va[,-58])
+t <- table(mailtype,va[,58])
+err0 <- (t[1,2]+t[2,1])/sum(t)
+
+
+filter1 <- ksvm(type~.,data=tr,kernel="rbfdot",kpar=list(sigma=0.05),C=which.min(err_va)*by)
+mailtype <- predict(filter1,te[,-58])
+t <- table(mailtype,te[,58])
+err1 <- (t[1,2]+t[2,1])/sum(t)
+
+
+filter2 <- ksvm(type~.,data=trva,kernel="rbfdot",kpar=list(sigma=0.05),C=which.min(err_va)*by)
+mailtype <- predict(filter2,te[,-58])
+t <- table(mailtype,te[,58])
+err2 <- (t[1,2]+t[2,1])/sum(t)
+
+
+filter3 <- ksvm(type~.,data=spam,kernel="rbfdot",kpar=list(sigma=0.05),C=which.min(err_va)*by)
+mailtype <- predict(filter3,te[,-58])
+t <- table(mailtype,te[,58])
+err3 <- (t[1,2]+t[2,1])/sum(t)
+
+
+
+# Questions
+
+# 1. Which model do we return to the user ? filter0, filter1, filter2 or filter3 ? Why ?
+
+# 2. What is the estimate of the generalization error of the model selected ? err0, err1, err2 or err3 ? Why ?
+```
+
+Test results:
+
+```{r, echo=FALSE}
+res <- rbind(c(err0, "train", "validation"), 
+      c(err1, "train", "test"), 
+      c(err2, "train + validation", "test"),
+      c(err3, "all data (spam)", "test"))
+row.names(res) <- c("filter0", "filter1", "filter2", "filter3")
+colnames(res) <- c("error", "trained on", "tested on")
+knitr::kable(res)
+```
+
+## 1. Which model do we return to the user ? filter0, filter1, filter2 or filter3 ? Why ?
+
+Model should be returned with smallest error, however its hard to comapre filter3 with others because it was tested on data which was used for training. Also filter0 was not tested on test dataset, as a result error might differ.
+
+Taking into account all arguments, filter2 should be selected as it was trained on bigger dataset (test + validation) and error is smallest between those which can be compared. (filter1 and filter2)  
+
+## 2. What is the estimate of the generalization error of the model selected ? err0, err1, err2 or err3 ? Why ?
+
+Generalization error is the error of the model on data which was not used for training, so err3 is not a generalization error. For chosen model (filter2) generalization error is err2 - `r err2`

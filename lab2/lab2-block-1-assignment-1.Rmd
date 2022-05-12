@@ -1,0 +1,230 @@
+---
+title: "Assignment 1"
+author: "Martynas Lukosevicius"
+date: "19/11/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(results = "asis")
+```
+
+# Assignment 1
+
+## 1. 
+
+```{r ,echo=FALSE}
+library(datasets)
+y <- iris
+
+library(ggplot2)
+plotiris <- ggplot(iris, aes(x=Sepal.Length, y=Sepal.Width, color=Species)) + 
+  geom_point(size=3) + theme_minimal() + ggtitle("Iris")
+plotiris
+
+```
+It is not easy to classify by LDA because as we can see from scatter plot versicolor overlay virginica. I expect that misclasification rate will be high because part of the virginica data will be predicted as versicolor and vice versa 
+
+## 2.
+
+### a)
+
+
+```{r , echo=FALSE}
+a2 <- function(x){
+y1 <- iris[as.numeric(iris$Species) == x, ][1:2]
+mean1 <- apply(y1, 2,mean)
+covar <- cov(y1)
+prior <- dim(y1)[1]/ dim(iris)[1]
+
+return(list(data = y1, mean = unname(mean1), covariance = covar, prior = prior, n = dim(y1)[1]))
+}
+
+
+pooledcov <- function(a,b,c){
+  temp <- (a$cov * a$n) + (b$cov * b$n) + (c$cov * c$n)
+  return(temp/dim(iris)[1])
+}
+
+Setosa <- a2(1)
+Versicolor <- a2(2)
+virginica <- a2(3)
+
+# print("Setosa")
+# print(Setosa[c(-1,-5)])
+# 
+# print("Versicolor")
+# print(Versicolor[c(-1,-5)])
+# 
+# print("Virginica")
+# print(virginica[c(-1,-5)])
+
+write_matex <- function(x) {
+  begin <- "\\begin{bmatrix}"
+  end <- "\\end{bmatrix}"
+  X <-
+    apply(x, 1, function(x) {
+      paste(
+        paste(x, collapse = "&"),
+        "\\\\"
+      )
+    })
+  writeLines(c(begin, X, end))
+}
+
+
+```
+
+Setosa: mean - $\begin{bmatrix}5.006 \\3.428 \\\end{bmatrix}$, covariance - $\begin{bmatrix}0.124&0.099 \\0.099&0.144 \\\end{bmatrix}$, $\pi_{setosa} - `r Setosa[[4]]`$
+
+Virginica: mean - $\begin{bmatrix}6.588 \\2.974 \\\end{bmatrix}$, covariance - $\begin{bmatrix}0.404&0.094 \\0.094&0.104 \\\end{bmatrix}$, $\pi_{virginica} - `r virginica[[4]]`$
+
+Versicolor: mean - $\begin{bmatrix}5.936 \\2.77 \\\end{bmatrix}$, covariance - $\begin{bmatrix}0.266&0.085 \\0.085&0.098 \\\end{bmatrix}$, $\pi_{versicolor} - `r Versicolor[[4]]`$
+
+### b)
+
+
+```{r , echo=FALSE}
+pcov <- pooledcov(Setosa,Versicolor,virginica)
+```
+
+Pooled covariance - $\begin{bmatrix}0.219&0.09 \\0.09&0.114 \\ \end{bmatrix}$
+
+### c)
+
+Probabilistic model for LDA:
+
+$$P(y=C_i|X,w) \propto P(X|Y = C_i,w) P(Y=C_i|w) $$
+$$P(X|Y = C_i,w) \sim N(\mu_i, \Sigma) $$
+$$P(Y=C_i|w) = \pi_i $$
+
+$$P(y=C_i|X,w) \propto exp[(\Sigma^{-1}\mu_i)^T X -\frac 1 2\mu_i^T \Sigma^{-1} \mu_i + log(\pi_i) ] = exp[w_iX + w_{0i}]$$
+
+Where $w_i - (\Sigma^{-1}\mu_i)^T$
+and $w_{0i} -  -\frac 1 2\mu_i^T \Sigma^{-1} \mu_i + log(\pi_i)$
+
+### d)
+
+discriminant function $\delta_k(x) = x^T \Sigma^{-1}\mu_k - \frac 1 2 \mu^T_k + log(\pi_k)$
+
+```{r}
+discrim <- function(x,a){
+  constant <- (-1/2) * t(a$mean) %*% solve(pcov) %*% a$mean + log(a$prior)
+  nonconstant <- t(x) %*% solve(pcov) %*% a$mean
+  return(nonconstant+constant)
+}
+```
+
+### e)
+ 
+ 
+ $$(w_i - w_k)x + (w_{0i} - w_{0k}) = 0$$
+```{r, echo=FALSE, message=FALSE}
+w0 <- function(a){
+  constant <- (-1/2) * t(a$mean) %*% solve(pcov) %*% a$mean + log(a$prior)
+  return(constant)
+}
+
+w <- function(a){
+  nonconstant <- solve(pcov) %*% a$mean
+  return(nonconstant)
+}
+
+```
+decision boundaries:
+
+ * Setosa - Versicolor: $\left(\begin{array}{cc} `r (w(Setosa) - w(Versicolor))[1]` \\ `r (w(Setosa) - w(Versicolor))[2]` \end{array}\right) x + (`r w0(Setosa) - w0(Versicolor)`) = 0$
+ * Virginica - Versicolor: $\left(\begin{array}{cc} `r (w(virginica) - w(Versicolor))[1]` \\ `r (w(virginica) - w(Versicolor))[2]` \end{array}\right) x + (`r w0(virginica) - w0(Versicolor)`) = 0$
+ * Setosa - Versicolor: $\left(\begin{array}{cc} `r (w(Setosa) - w(virginica))[1]` \\ `r (w(Setosa) - w(virginica))[2]` \end{array}\right) x + (`r w0(Setosa) - w0(virginica)`) = 0$
+ 
+
+LDA assume that $\Sigma_i = \Sigma$, However it is not the case in this situation
+
+## 3. 
+```{r, echo=FALSE, message=FALSE}
+predictLDA <- function(x){
+  values <- c(discrim(x, Setosa), discrim(x,Versicolor), discrim(x,virginica))
+  return(which.max(values))
+}
+
+
+
+res <- cbind(iris[1:2],cut(apply(iris[1:2], 1, predictLDA),3, c("setosa","versicolor","virginica")))
+colnames(res) <- c("Sepal.Length", "Sepal.Width", "Species")
+plotcustom <- ggplot(res, aes(x=Sepal.Length, y=Sepal.Width, color=Species)) + 
+  geom_point(size=3) + theme_minimal() + ggtitle("LDA")
+
+# a <- table(iris$Species, res$Species)
+# knitr::kable(a, caption = "Confusion matrix ")
+
+```
+
+
+```{r, echo=FALSE,fig.height = 6, message=FALSE}
+
+library(MASS)
+fitLDA <- lda(Species ~ Sepal.Length + Sepal.Width, data = iris)
+resLDA <- cbind(iris[1:2], predict(fitLDA, iris[1:2]))
+colnames(resLDA) <- c("Sepal.Length", "Sepal.Width", "Species")
+
+library(gridExtra)
+
+plotLDA <- ggplot(resLDA, aes(x=Sepal.Length, y=Sepal.Width, color=Species)) + 
+  geom_point(size=3) + theme_minimal() + ggtitle("LDA using MASS library")
+
+grid.arrange(plotcustom, plotLDA, nrow=2)
+```
+ Missclasification rate of LDA: `r  mean(iris$Species != res$Species)`
+ 
+ Missclasification rate of LDA using MASS library: `r  mean(iris$Species != resLDA$Species)`
+ 
+ Test errors are the same, Classification methods are identical so and the results are identical 
+ 
+## 4.
+ 
+```{r , echo=FALSE, fig.height = 7, message=FALSE, warning=FALSE}
+library(mvtnorm)
+set.seed(12345)
+gen <- rbind(rmvnorm(50, Setosa$mean, pcov),
+             rmvnorm(50, Versicolor$mean, pcov),
+             rmvnorm(50, virginica$mean, pcov))
+gen <- round(gen,1)
+gen <- as.data.frame(cbind(gen, c(rep("setosa",50), rep("versicolor",50), rep("virginica",50) )))
+colnames(gen) <- c("Sepal.Length", "Sepal.Width", "Species")
+
+plotfromequation <- ggplot(gen, aes(x=as.numeric(Sepal.Length), y=as.numeric(Sepal.Width), color=Species)) + 
+  geom_point(size=3) + ggtitle("Generated data")  + theme_minimal() + xlab("Sepal.Length") + ylab("Sepal.Width")
+grid.arrange(plotiris, plotfromequation,  plotcustom,  nrow=3)
+```
+
+
+From Plots we can see generated data is spread equally, it is because of LDA assumption that covariances are equal. We can also notice that LDA can not distinguish classes when data overlay. 
+
+## 5. 
+
+```{r, echo =FALSE, results=FALSE}
+library(nnet)
+fitlr <- multinom(Species ~ Sepal.Length + Sepal.Width, data = iris)
+reslr <- predict(fitlr,iris[1:2])
+
+reslr <- cbind(iris[1:2], reslr, deparse.level = 1)
+names(reslr)[3] <- c("Species")
+
+plotlr <- ggplot(reslr, aes(x=Sepal.Length, y=Sepal.Width, color=Species)) + 
+  geom_point(size=3) + ggtitle("Logistic regression")  + theme_minimal() 
+
+```
+
+```{r, echo =FALSE, fig.height=5}
+grid.arrange(plotlr,  plotcustom,  nrow=2)
+```
+
+```{r, echo = FALSE}
+table <- matrix(c(mean(iris$Species != resLDA$Species),mean(iris$Species != reslr$Species)))
+colnames(table) <- c("Misclasification rate")
+row.names(table) <- c("LDA", "LR")
+knitr::kable(table)
+```
+
+From misclasification rate we can see that logistic regresion performed slightly better than LRA.

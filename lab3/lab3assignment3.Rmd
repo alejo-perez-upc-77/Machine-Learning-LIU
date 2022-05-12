@@ -1,0 +1,74 @@
+---
+title: "Lab3 Assignment 3"
+author: "Shwetha"
+date: "12/3/2020"
+output: pdf_document
+---
+
+# 3. NEURAL NETWORKS
+```{r setup, include=FALSE,echo = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(neuralnet)
+```
+## 1.
+
+Fitting neural network to learn the trigonometric sine function
+```{r,echo = FALSE}
+
+set.seed(1234567890)
+Var <- runif(500, 0, 10)
+mydata <- data.frame(Var, Sin=sin(Var))
+tr <- mydata[1:25,] # Training
+te <- mydata[26:500,] # Test
+```
+```{r}
+winit = runif(46,-0.5,0.5)
+nn = neuralnet(Sin~Var,tr,hidden = 15,startweights = winit)
+train_predict = predict(nn,tr)
+test_predict = predict(nn,te)
+mse = mean(((te[,2]-test_predict)^2)/475)
+```
+```{r,echo = FALSE}
+plot(nn)
+```
+```{r,echo = FALSE}
+plot(tr, cex=2)
+points(te, col = "blue", cex=1)
+points(te[,1],predict(nn,te), col="red", cex=1)
+```
+From the above graph we can see that prediction from the neural network on testdata is pretty good with a low mean square error of `r mse`
+
+## 2.
+Fitting the neural network for test data of range [0,20]
+```{r}
+set.seed(1234567890)
+Var <- runif(500, 0, 20)
+newdata <- data.frame(Var, Sin=sin(Var))
+new_predict = predict(nn,newdata)
+plot(newdata,col="red", ylim=c(-5,5))
+points(newdata$Var,new_predict,col="blue")
+
+```
+Prediction goes wrong after for the values which are not in training range this is because neural networks are not extrapolation methods.
+That is to say for regions of the variable space where no training data is available, the output of a neural network is not reliable.
+
+## 3.
+
+Neural net to predict x from sin(x)
+ 
+```{r}
+set.seed(1234567890)
+Var <- runif(500, 0, 10)
+newdata <- data.frame(Var, Sin=sin(Var))
+w = runif(31,-0.1,0.1)
+nn = neuralnet(Var~Sin,newdata,hidden = 10,stepmax=1e8,startweights = w)
+```
+```{r, echo = FALSE}
+plot(nn)
+```
+```{r, echo = FALSE}
+plot(newdata[,2],newdata[,1],col="red",xlab = "Sin",ylab = "Var")
+points(newdata[,2],predict(nn,newdata), col="blue", cex=1,xlab = "Sin", ylab = "Var")
+```
+
+Sin of a variables oscillates from -1 to 1, from the graph we can see that multiple values of variables give out same output when applied with sine function, this makes it harder for neural network to predict the independent variable from the response of sine function. As result we dont get a good prediction here.

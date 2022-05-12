@@ -1,0 +1,13 @@
+base
+randomForest
+ggplot2
+kknn
+reshape2
+knitr
+readr
+cluster
+survival
+pamr
+Matrix
+glmnet
+kernlab
